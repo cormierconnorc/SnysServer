@@ -5,7 +5,7 @@ SnysServer
 *#
 *.o
 *.hi
-.my.cnf
-.mysql
+.my.cnf*
+.mysql*
 #Ignore credentials file as well for security reasons. The sample will be uploaded
 credentials.txt
