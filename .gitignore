@@ -1,0 +1,9 @@
+#Ignore binary
+SnysServer
+#Files that don't need to be shared
+*~
+*#
+*.o
+*.hi
+#Ignore credentials file as well for security reasons. The sample will be uploaded
+credentials.txt

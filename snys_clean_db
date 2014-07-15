@@ -1,0 +1,158 @@
+-- MySQL dump 10.15  Distrib 10.0.12-MariaDB, for Linux (x86_64)
+--
+-- Host: localhost    Database: Snys
+-- ------------------------------------------------------
+-- Server version	10.0.12-MariaDB-log
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `Groups`
+--
+
+DROP TABLE IF EXISTS `Groups`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `Groups` (
+  `Gid` int(11) NOT NULL AUTO_INCREMENT,
+  `Groupname` varchar(255) NOT NULL,
+  PRIMARY KEY (`Gid`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `Groups`
+--
+
+LOCK TABLES `Groups` WRITE;
+/*!40000 ALTER TABLE `Groups` DISABLE KEYS */;
+/*!40000 ALTER TABLE `Groups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `Membership`
+--
+
+DROP TABLE IF EXISTS `Membership`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `Membership` (
+  `Uid` int(11) NOT NULL,
+  `Gid` int(11) NOT NULL,
+  `Permissions` varchar(11) NOT NULL,
+  KEY `Uid` (`Uid`),
+  KEY `Gid` (`Gid`),
+  CONSTRAINT `Membership_ibfk_1` FOREIGN KEY (`Uid`) REFERENCES `Users` (`Uid`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `Membership_ibfk_2` FOREIGN KEY (`Gid`) REFERENCES `Groups` (`Gid`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `Membership`
+--
+
+LOCK TABLES `Membership` WRITE;
+/*!40000 ALTER TABLE `Membership` DISABLE KEYS */;
+/*!40000 ALTER TABLE `Membership` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `Notifications`
+--
+
+DROP TABLE IF EXISTS `Notifications`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `Notifications` (
+  `Nid` int(11) NOT NULL AUTO_INCREMENT,
+  `Gid` int(11) NOT NULL,
+  `Text` text NOT NULL,
+  `Time` datetime DEFAULT NULL,
+  PRIMARY KEY (`Nid`),
+  KEY `Gid` (`Gid`),
+  CONSTRAINT `Notifications_ibfk_1` FOREIGN KEY (`Gid`) REFERENCES `Groups` (`Gid`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `Notifications`
+--
+
+LOCK TABLES `Notifications` WRITE;
+/*!40000 ALTER TABLE `Notifications` DISABLE KEYS */;
+/*!40000 ALTER TABLE `Notifications` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `UserNoteStatus`
+--
+
+DROP TABLE IF EXISTS `UserNoteStatus`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `UserNoteStatus` (
+  `Uid` int(11) NOT NULL,
+  `Nid` int(11) NOT NULL,
+  `Status` varchar(10) NOT NULL,
+  `RemindAt` datetime DEFAULT NULL,
+  KEY `Uid` (`Uid`),
+  KEY `Nid` (`Nid`),
+  CONSTRAINT `UserNoteStatus_ibfk_1` FOREIGN KEY (`Uid`) REFERENCES `Users` (`Uid`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `UserNoteStatus_ibfk_3` FOREIGN KEY (`Nid`) REFERENCES `Notifications` (`Nid`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `UserNoteStatus`
+--
+
+LOCK TABLES `UserNoteStatus` WRITE;
+/*!40000 ALTER TABLE `UserNoteStatus` DISABLE KEYS */;
+/*!40000 ALTER TABLE `UserNoteStatus` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `Users`
+--
+
+DROP TABLE IF EXISTS `Users`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `Users` (
+  `Uid` int(11) NOT NULL AUTO_INCREMENT,
+  `Email` varchar(255) NOT NULL,
+  `Password` varchar(255) DEFAULT NULL,
+  `Status` varchar(10) NOT NULL,
+  PRIMARY KEY (`Uid`),
+  UNIQUE KEY `Email` (`Email`)
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `Users`
+--
+
+LOCK TABLES `Users` WRITE;
+/*!40000 ALTER TABLE `Users` DISABLE KEYS */;
+/*!40000 ALTER TABLE `Users` ENABLE KEYS */;
+UNLOCK TABLES;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2014-07-15 14:33:40
