@@ -41,7 +41,8 @@ data Notification = Notification
                     EmailNotification
                        { sendTo :: Email,
                          fromGroup :: Groupname,
-                         text :: String
+                         text :: String,
+                         time :: Timestamp
                        } |
                     HandledNotification
                        { notification :: Notification,
@@ -109,7 +110,7 @@ createGroup db uid name =
       insertMembership db uid gid Owner
       return gid
 
-insertNotificationQuery = "INSERT INTO Notifications(Gid, Text, Time) VALUES (?, ?, FROM_UNIXTIME(w?))"
+insertNotificationQuery = "INSERT INTO Notifications(Gid, Text, Time) VALUES (?, ?, FROM_UNIXTIME(?))"
 
 insertNotification :: Connection -> Id -> String -> Timestamp -> IO Int
 insertNotification db gid text time = 
@@ -141,7 +142,6 @@ removeNotification :: Connection -> Id -> IO ()
 removeNotification db nid =
    do run db removeNotificationQuery [toSql nid]
       commit db
-
 
 removeUserQuery = "DELETE FROM Users WHERE Uid = ?"
 
@@ -225,7 +225,8 @@ getGroupPermission db uid gid =
       return $ case perm of Nothing -> None
                             Just x -> read $ fromSql x
 
-getPendingEmailsQuery = "SELECT Users.Email, Groups.Groupname, Notifications.Text FROM \
+getPendingEmailsQuery = "SELECT Users.Email, Groups.Groupname, Notifications.Text, \
+                           \UNIX_TIMESTAMP(Notifications.Time) FROM \
                            \UserNoteStatus INNER JOIN Users ON Users.Uid = UserNoteStatus.Uid \
                            \INNER JOIN Notifications on UserNoteStatus.Nid = Notifications.Nid \
                            \INNER JOIN Groups on Notifications.Gid = Groups.Gid \
@@ -237,7 +238,7 @@ getPendingEmails :: Connection -> Timestamp -> IO [Notification]
 getPendingEmails db time =
    do res <- quickQuery' db getPendingEmailsQuery [toSql time]
       return $ map toEmailNotification res
-   where toEmailNotification [e, g, t] = EmailNotification (fromSql e) (fromSql g) (fromSql t)
+   where toEmailNotification [e, g, t, tS] = EmailNotification (fromSql e) (fromSql g) (fromSql t) (fromSql tS)
 
 
 getPendingNotificationsQuery = "SELECT Notifications.Nid, Notifications.Gid, \
@@ -276,10 +277,52 @@ toHandledNotification ls =
        gn = toNotification gnLst
    in HandledNotification gn (read $ fromSql stat) (fromSql remind)
 
+getHandledNotificationQuery = "SELECT N.Nid, N.Gid, N.Text, UNIX_TIMESTAMP(N.Time), \
+                                 \U.Status, UNIX_TIMESTAMP(U.RemindAt) FROM \
+                                 \UserNoteStatus U INNER JOIN Notifications N ON \
+                                 \U.Nid = N.Nid WHERE U.Uid = ? AND N.Nid = ?"
+
+--Get a single handled notification. Still returns list, which should be used
+--for handling failure.
+getHandledNotification :: Connection -> Id -> Id -> IO [Notification]
+getHandledNotification db uid nid =
+   map toHandledNotification `fmap`
+      quickQuery' db getHandledNotificationQuery [toSql uid, toSql nid]
+      
+--Returns a singleton list if legal, null list otherwise
+canUserSeeNoteQuery = "SELECT N.Gid FROM \
+                         \(SELECT Gid FROM Membership WHERE Uid = ?) U INNER JOIN \
+                         \(SELECT Gid FROM Notifications WHERE Nid = ?) N ON \
+                         \U.Gid = N.Gid"
+
+canUserSeeNote :: Connection -> Id -> Id -> IO Bool
+canUserSeeNote db uid nid =
+   do res <- quickQuery' db canUserSeeNoteQuery [toSql uid, toSql nid]
+      return . not . null $ res
+
+
+getNotificationQuery = "SELECT Nid, Gid, Text, UNIX_TIMESTAMP(Time) \
+                          \FROM Notifications WHERE Nid = ?"
+
+getNotification :: Connection -> Id -> IO [Notification]
+getNotification db nid =
+   map toNotification `fmap`
+      quickQuery' db getNotificationQuery [toSql nid]
 
 -------------------------------
 -- Update Queries            --
 -------------------------------
+
+downgradePendingEmailsQuery = "UPDATE UserNoteStatus \
+                                 \SET Status = CASE WHEN Status=\"All\" THEN \"Alarm\" \
+                                 \ELSE \"NoRemind\" END \
+                                 \WHERE RemindAt <= FROM_UNIXTIME(?) AND Status IN (\"All\", \"JustEmail\")"
+
+--Move pending emails to non-email notification levels
+downgradePendingEmails :: Connection -> Timestamp -> IO ()
+downgradePendingEmails db time =
+   do run db downgradePendingEmailsQuery [toSql time]
+      commit db
 
 updateNotification :: Connection -> Id -> (Maybe String) -> (Maybe Timestamp) -> IO ()
 updateNotification db nid (Just text) (Just time) = 

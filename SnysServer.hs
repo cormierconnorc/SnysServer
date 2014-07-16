@@ -18,6 +18,7 @@ import Data.Aeson.TH
 import qualified Data.Vector as V
 import Data.Maybe (isJust)
 import Control.Applicative (optional)
+import Data.Time.Clock.POSIX
 
 data GenericResponse = GenericResponse { error :: String,
                                          response :: String
@@ -175,6 +176,9 @@ guardRead s =
 handleNote :: Connection -> Db.Id -> ServerPart Response
 handleNote db uid =
    do nid <- look "nid" >>= guardRead
+      --Don't let user's see notes they don't have access to!
+      legal <- liftIO $ Db.canUserSeeNote db uid nid
+      guard (legal)
       handleNoteWithNid db uid nid
 
 --The only function that handles a note separate of the group
@@ -183,8 +187,14 @@ handleNoteWithNid db uid nid =
    do status <- look "newStatus" >>= guardRead
       remind <- getRemindTime status
       liftIO $ Db.insertUserNoteStatus db uid nid status remind
-      ok . toResponse $ encode $ GenericResponse "" "Note updated!"
-      --notifications db uid --Return notification list if successsful
+      --Get the note that was changed out of the database
+      newNotes <- liftIO $ Db.getHandledNotification db uid nid
+      --Provide it in a response. newNotes should never be null,
+      --but we check anyway for safety purposes
+      --(perhaps someone fucked up the database in another thread)
+      if null newNotes
+         then ok . toResponse $ encode $ GenericResponse "There was no note to update! This error is highly unlikely, so you should feel excited!" ""
+         else ok . toResponse . encode . head $ newNotes
    where getRemindTime Db.NoRemind = return Nothing
          getRemindTime Db.Hide = return Nothing
          getRemindTime _ =
@@ -207,17 +217,21 @@ deleteGroup db gid perm =
    do guard (perm == Db.Owner) --Must be owner to delete
       liftIO $ Db.removeGroup db gid
       ok . toResponse $ encode $ GenericResponse "" "Group deleted"
-      --groups db uid
 
+fetchNote :: Connection -> Db.Id -> ServerPart Response
+fetchNote db nid =
+   do newNotes <- liftIO $ Db.getNotification db nid
+      if null newNotes
+         then ok . toResponse . encode $ GenericResponse "Note wasn't created for some stupid reason! I blame the RDBMS." ""
+         else ok . toResponse . encode . head $ newNotes
 
 createNote :: Connection -> Db.Id -> Db.MembershipPermission -> ServerPart Response
 createNote db gid gPerm =
    do guard(gPerm == Db.Owner || gPerm == Db.Contributor)
       text <- look "text"
       time <- look "time" >>= guardRead
-      liftIO $ Db.insertNotification db gid text time
-      ok . toResponse $ encode $ GenericResponse "" "New notification created"
-      --notifications db uid
+      nid <- liftIO $ Db.insertNotification db gid text time
+      fetchNote db nid
 
 createAndHandleNote :: Connection -> Db.Id -> Db.Id -> Db.MembershipPermission -> ServerPart Response
 createAndHandleNote db uid gid gPerm =
@@ -233,7 +247,7 @@ editNote db nid =
    do text <- optional $ look "text"
       time <- optional $ look "time" >>= guardRead
       liftIO $ Db.updateNotification db nid text time
-      ok . toResponse $ encode $ GenericResponse "" "Notification updated."
+      fetchNote db nid
       
 
 
@@ -252,8 +266,32 @@ deleteNote db nid =
 --Run background thread every 30 seconds
 sleepTime = 1000 * 1000 * 30
 
+formatTime :: (Integral a) => a -> String
+formatTime = show . posixSecondsToUTCTime . realToFrac
+
 --Send emails and remove old notifications from DB
 handleDb :: Connection -> IO ()
 handleDb db = forever $
-   do putStrLn "Doin' background things. This hasn't actually been implemented yet."
+   do time <- round `fmap` getPOSIXTime --Get time in seconds
+      --Indicate start of pass
+      putStrLn $ "Started run at " ++ (formatTime time)
+      --Send emails
+      sendPendingEmails db time
+      --Downgrade pending so emails aren't resent
+      Db.downgradePendingEmails db time
+      --Clear out old notifications
+      Db.removeNotificationsBefore db time
+      --Remove all empty groups
+      Db.removeEmptyGroups db
       threadDelay sleepTime
+
+--TODO: Fix so emails don't resend once they become current!
+sendPendingEmails :: Connection -> Db.Timestamp -> IO ()
+sendPendingEmails db time = 
+   do notes <- Db.getPendingEmails db time
+      mapM_ send notes
+   where send (Db.EmailNotification to from text time) =
+            sendMail
+               to
+               ("Reminder from " ++ from)
+               (text ++ "\nEvent in question occurs at " ++ (formatTime time))
