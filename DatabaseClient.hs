@@ -10,7 +10,8 @@ import Data.List (splitAt)
 import Control.Monad (when)
 
 --Enumerated data types in db
-data UserStatus = Verified | Unverified | OptOut | DNE deriving (Show, Read, Eq)
+--Note: Pending status is for users who register via the api. PendingViaInvite is used for individuals without Snys accounts who are invited to a group. They are can only receive notifications from groups they're invited to until (if) they create an account via the Snys api. Attempting to register via the api with the email account of an EmailOnly user will result in an upgrade to verified status for that user.
+data UserStatus = Verified | Unverified | EmailOnly | UnverifiedEmailOnly | Pending | PendingViaInvite | DNE deriving (Show, Read, Eq)
 data MembershipPermission = Owner | Contributor | Member | None deriving (Show, Read, Eq)
 data UserNoteStatus = All | JustEmail | Hide | Alarm | NoRemind deriving (Show, Read, Eq)
 
@@ -68,6 +69,16 @@ retrieveId db =
       let id = fromSql . head . head $ res
       return id
 
+--Error handling function
+sqlCatchRun :: Connection -> IO Integer -> IO (Either String Integer)
+sqlCatchRun db runAction =
+   do catch (do res <- runAction
+                commit db
+                return $ Right res
+            )
+            (\(SqlError _ _ msg) -> return $ Left msg)
+            
+
 -------------------------------
 -- Insertion Queries         --
 -------------------------------
@@ -80,11 +91,7 @@ insertUserQuery = "INSERT INTO Users(Email, Password, Status) VALUES (?, ?, ?)"
 insertUser :: Connection -> Email -> Maybe Password -> UserStatus -> IO (Either String Id)
 insertUser db e p s = 
    --Attempt query, return failure if applicable
-   do result <- catch (do res <- run db insertUserQuery [toSql e, toSql p, toSql $ show s]
-                          commit db
-                          return $ Right res
-                      )
-                      (\(SqlError _ _ msg) -> return $ Left msg)
+   do result <- sqlCatchRun db $ run db insertUserQuery [toSql e, toSql p, toSql $ show s]
       case result of Right _ -> do id <- retrieveId db
                                    return $ Right id
                      Left e -> return $ Left e --Must be repackaged in either with right type
@@ -179,6 +186,15 @@ removeNotificationsBefore db time =
    do run db removeNotificationsBeforeQuery [toSql time]
       commit db
 
+--Note: also allow delete via unverify for email only users. This allows them to follow the same original link from their verification email to delete their account. Status is restricted so a user can't guess someone else's uid and email (however unlikely) and use it to delete their account without a password.
+unverifyUserQuery = "DELETE FROM Users WHERE Uid = ? AND Email = ? \
+                       \AND Status IN (\"Unverified\", \"UnverifiedEmailOnly\", \"EmailOnly\")"
+
+unverifyUser :: Connection -> Id -> Email -> IO Integer
+unverifyUser db uid email =
+   do res <- run db unverifyUserQuery [toSql uid, toSql email]
+      commit db
+      return res
 
 -------------------------------
 -- Access Queries            --
@@ -195,6 +211,21 @@ validateUser db email pass =
 mHead :: [a] -> Maybe a
 mHead [] = Nothing
 mHead (x:_) = Just x
+
+toUser :: [SqlValue] -> User
+toUser [uid, email, pass, status] = User (fromSql uid) (fromSql email)
+                                       (fromSql pass) (read . fromSql $ status)
+
+getUserQuery = "SELECT * FROM Users WHERE Uid = ?"
+
+getUser :: Connection -> Id -> IO (Maybe User)
+getUser db uid = 
+   do res <- quickQuery' db getUserQuery [toSql uid]
+      let user = map toUser res
+      if null user
+         then return Nothing
+         else return $ Just (head user)
+      
 
 getUserStatusQuery = "SELECT Status FROM Users WHERE Uid = ?"
 
@@ -232,7 +263,8 @@ getPendingEmailsQuery = "SELECT Users.Email, Groups.Groupname, Notifications.Tex
                            \INNER JOIN Groups on Notifications.Gid = Groups.Gid \
                            \WHERE (UserNoteStatus.Status = \"All\" \
                              \OR UserNoteStatus.Status = \"JustEmail\") \
-                             \AND UserNoteStatus.RemindAt <= FROM_UNIXTIME(?)"
+                             \AND UserNoteStatus.RemindAt <= FROM_UNIXTIME(?) \
+                             \AND Users.Status IN (\"Verified\", \"EmailOnly\")"
 
 getPendingEmails :: Connection -> Timestamp -> IO [Notification]
 getPendingEmails db time =
@@ -309,6 +341,12 @@ getNotification db nid =
    map toNotification `fmap`
       quickQuery' db getNotificationQuery [toSql nid]
 
+getPendingUsersQuery = "SELECT * FROM Users WHERE Status = \"Pending\""
+
+getPendingUsers :: Connection -> IO [User]
+getPendingUsers db =
+   map toUser `fmap` quickQuery' db getPendingUsersQuery []
+
 -------------------------------
 -- Update Queries            --
 -------------------------------
@@ -335,3 +373,62 @@ updateNotification db nid _ (Just time) =
    do run db "UPDATE Notifications SET Time=FROM_UNIXTIME(?) WHERE Nid=?" [toSql time, toSql nid]
       commit db
 updateNotification db nid _ _ = return ()
+
+
+verifyUserQuery = "UPDATE Users SET Status = CASE \
+                     \WHEN Status=\"Unverified\" THEN \"Verified\" \
+                     \ELSE \"EmailOnly\" END \
+                     \WHERE Uid = ? AND Email = ? \
+                     \AND Status IN (\"Unverified\", \"UnverifiedEmailOnly\")"
+
+verifyUser :: Connection -> Id -> Email -> IO Integer
+verifyUser db uid email =
+   do res <- run db verifyUserQuery [toSql uid, toSql email]
+      commit db
+      return res
+
+
+--Note: Whenever email changes, verification becomes pending. Also, uses sqlCatchRun since updates may fail (if user attempts to switch to duplicate email)
+updateUser :: Connection -> Id -> Maybe Email -> Maybe Password -> IO (Either String Integer)
+updateUser db uid (Just email) (Just pass) =
+   do result <- sqlCatchRun db $
+                   run db "UPDATE Users SET Email=?,Password=?,Status=\"Pending\" WHERE Uid=?"
+                      [toSql email, toSql pass, toSql uid]
+      return result
+updateUser db uid _ (Just pass) =
+   do changed <- run db "UPDATE Users SET Password=? WHERE Uid=?" [toSql pass, toSql uid]
+      commit db
+      return $ Right changed
+updateUser db uid (Just email) _ =
+   do result <- sqlCatchRun db $
+                   run db "UPDATE Users SET Email=?,Status=\"Pending\" WHERE Uid=?"
+                      [toSql email, toSql uid]
+      return result
+updateUser _ _ _ _ = return $ Right 0
+
+
+downgradePendingQuery = "UPDATE Users SET Status=\"Unverified\" WHERE Status=\"Pending\""
+
+downgradePending :: Connection -> IO ()
+downgradePending db =
+   do run db downgradePendingQuery []
+      commit db
+
+--Select unhandled notifications for email-only users.
+ueouSelectQuery = "SELECT Users.Uid, Notifications.Nid, 'JustEmail', Notifications.Time FROM \
+                     \Users INNER JOIN Membership ON Users.Uid = Membership.Uid \
+                     \INNER JOIN Notifications ON Membership.Gid = Notifications.Gid \
+                     \WHERE Users.Status = \"EmailOnly\" AND Users.Uid NOT IN (SELECT \
+                     \Uid FROM UserNoteStatus WHERE Nid = Notifications.Nid)"
+
+ueouInsertQuery = "INSERT INTO UserNoteStatus VALUES (?, ?, ?, ?)"
+
+--Add UserNoteStatus entries for email-only users, reminding them at time of note
+updateEmailOnlyUsers :: Connection -> IO ()
+updateEmailOnlyUsers db = 
+   do notes <- quickQuery' db ueouSelectQuery []
+      --Prepare the insert statement
+      insert <- prepare db ueouInsertQuery
+      executeMany insert notes
+      commit db
+      

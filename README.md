@@ -1,7 +1,12 @@
 #Snys Server
 
-The server-side component of the Snys app, written in Haskell. Depends on hdbc-odbc, smtps-gmail, happstack-server, and aeson packages from Hackage. 
+The server-side component of the Snys app, written in Haskell. Still in development.
 
+##Setting up Snys
+
+Depends on hdbc-odbc, smtps-gmail, happstack-server, and aeson packages from Hackage.
+Create a `credentials.txt` file similar to the example provided to take advantage of the Snys server's email functionality.
+Also, edit the server address at the top of SnysServer.hs to set the address linked to in verification emails. This solution is only temporary, but it is necessary in this version
 
 ##Snys API Documentation
 
@@ -17,6 +22,24 @@ Register a new account with given email and password. A confirmation email will 
 | --------- | ----------- |
 | email     | Email address to register. Must not be associated with an existing account. |
 | pass      | New account's password |
+
+######/verify
+
+Verify a given email address.
+
+| Parameter | Description |
+| --------- | ----------- |
+| email     | Email address to verify |
+| uid       | Uid of account to verify |
+
+######/unverify
+
+Confirm incorrect email address. Removes user from database.
+
+| Parameter | Description |
+| --------- | ----------- |
+| email     | Email address to unverify |
+| uid       | Uid of account to unverify |
 
 ####User-verified endpoints
 
@@ -66,6 +89,17 @@ Delete the given user account. You know, for when you realize the email you ente
 | email     | Account email |
 | pass      | Account password |
 
+######/updateUser
+
+Change information associated with the given user account.
+
+| Parameter | Description |
+| --------- | ----------- |
+| email     | Account email |
+| pass      | Account password |
+| newEmail  | _Optional:_ New email address |
+| newPass   | _Optional:_ New password |
+
 ######/handleNote
 
 Change the status of a note. The affected note can be pending or already handled. Since this only affects the way a user sees a note and not the note itself, it requires no authentication beyond the user's account.
@@ -82,7 +116,7 @@ Change the status of a note. The affected note can be pending or already handled
 
 ######/inviteUser
 
-Invite a user to the provided group. This can be done by anyone with `Member` (read only) permissions or higher.
+TODO: Invite a user to the provided group. This can be done by anyone with `Member` (read only) permissions or higher.
 
 | Parameter | Description |
 | --------- | ----------- |

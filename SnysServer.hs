@@ -39,6 +39,8 @@ $(deriveToJSON defaultOptions ''Db.Notification)
 --instance T.ToJSON GenericResponse where
 --   toJSON (GenericResponse e d) = T.object ["errors" .= e, "data" .= d]
 
+--The address of the server. Necessary for email verification!
+serverAddress = "http://localhost:8005"
 
 main =
    do db <- Db.connectDb
@@ -56,6 +58,8 @@ handler :: Connection -> ServerPart Response
 handler db =
    do decodeBody bPolicy --Decode post body
       msum [ dir "register" $ register db,
+             dir "verify" $ verify db,
+             dir "unverify" $ unverify db,
              userValidatedRequests db,
              ok . toResponse . encode $ GenericResponse "Invalid query" ""
            ]
@@ -69,6 +73,7 @@ userValidatedRequests db =
              dir "groups" $ groups db id,
              dir "createGroup" $ createGroup db id,
              dir "deleteUser" $ deleteUser db id,
+             dir "updateUser" $ updateUser db id,
              --Note for this option: change how USER views note, not note itself.
              --Thus at user level.
              dir "handleNote" $ handleNote db id,
@@ -104,14 +109,33 @@ register db =
    do methodM POST  --Ensure that this is a post request
       email <- look "email"
       pass <- look "pass"
-      insRes <- liftIO $ Db.insertUser db email (Just pass) Db.Unverified
-      let response = getResponse insRes
+      insRes <- liftIO $ Db.insertUser db email (Just pass) Db.Pending
+      let response = getRegisterResponse insRes
       ok $ toResponse $ encode response
-   where getResponse (Left x)
+   where getRegisterResponse (Left x)
            | "Duplicate" `isInfixOf` x =
                 GenericResponse "Duplicate email! Have you forgotten your password?" ""
            | otherwise = GenericResponse x ""
-         getResponse (Right _) = GenericResponse "" "Everything worked!"
+         getRegisterResponse (Right _) = GenericResponse "" "Everything worked!"
+
+
+verify :: Connection -> ServerPart Response
+verify db =
+   do uid <- look "uid" >>= guardRead
+      email <- look "email"
+      recChanged <- liftIO $ Db.verifyUser db uid email
+      --TODO better formatted response. The end user will see this.
+      case recChanged of 0 -> ok . toResponse . B.pack $ "Your account is no longer eligible for verification. Did you already select on of the links in this email?"
+                         _ -> ok . toResponse . B.pack $ "Your account is now verified, allowing you to receive email notifications!"
+
+unverify :: Connection -> ServerPart Response
+unverify db =
+   do uid <- look "uid" >>= guardRead
+      email <- look "email"
+      recChanged <- liftIO $ Db.unverifyUser db uid email
+      --TODO better formatting
+      case recChanged of 0 -> ok . toResponse . B.pack $ "Your account is no longer eligible for verification. Did you already select on of the links in this email?"
+                         _ -> ok . toResponse . B.pack $ "Your account has been removed from our records. Sorry we bothered you!"
 
 --Attempt to log a user in and return the Uid if correct, Nothing otherwise
 --Guards against invalid requests
@@ -160,6 +184,18 @@ deleteUser :: Connection -> Db.Id -> ServerPart Response
 deleteUser db id =
    do liftIO $ Db.removeUser db id
       ok . toResponse . encode $ GenericResponse "" "We're sorry to see you go (or are we?)"
+
+updateUser :: Connection -> Db.Id -> ServerPart Response
+updateUser db uid =
+   do newEmail <- optional $ look "newEmail"
+      newPass <- optional $ look "newPass"
+      res <- liftIO $ Db.updateUser db uid newEmail newPass
+      ok . toResponse . encode $ getUpdateResponse res
+   where getUpdateResponse (Left msg)
+           | "Duplicate" `isInfixOf` msg = GenericResponse "Email already associated with \
+                                              \different account! Please choose another." ""
+           | otherwise = GenericResponse msg ""
+         getUpdateResponse (Right _) = GenericResponse "" "Account updated!"
 
 readMaybe :: (Read a) => String -> Maybe a
 readMaybe s = case reads s of [(x, "")] -> Just x
@@ -247,17 +283,12 @@ editNote db nid =
    do text <- optional $ look "text"
       time <- optional $ look "time" >>= guardRead
       liftIO $ Db.updateNotification db nid text time
-      fetchNote db nid
-      
-
+      fetchNote db nid 
 
 deleteNote :: Connection -> Db.Id -> ServerPart Response
 deleteNote db nid =
    do liftIO $ Db.removeNotification db nid
       ok . toResponse $ encode $ GenericResponse "" "Notification removed."
-
-
-
 
 -------------------------------
 -- Background Thread         --
@@ -275,6 +306,10 @@ handleDb db = forever $
    do time <- round `fmap` getPOSIXTime --Get time in seconds
       --Indicate start of pass
       putStrLn $ "Started run at " ++ (formatTime time)
+      --Now send confirmation emails to pending users.
+      sendPendingVerifications db
+      --Add entries to UserNoteStatus for email only users who've received new notifications
+      Db.updateEmailOnlyUsers db
       --Send emails
       sendPendingEmails db time
       --Downgrade pending so emails aren't resent
@@ -285,7 +320,6 @@ handleDb db = forever $
       Db.removeEmptyGroups db
       threadDelay sleepTime
 
---TODO: Fix so emails don't resend once they become current!
 sendPendingEmails :: Connection -> Db.Timestamp -> IO ()
 sendPendingEmails db time = 
    do notes <- Db.getPendingEmails db time
@@ -295,3 +329,23 @@ sendPendingEmails db time =
                to
                ("Reminder from " ++ from)
                (text ++ "\nEvent in question occurs at " ++ (formatTime time))
+
+verificationText :: Db.Id -> Db.Email -> String
+verificationText uid email = 
+   "Welcome to Snys! To verify your email address, click the link below:\n\n\t"
+      ++ serverAddress ++ "/verify?email=" ++ email ++ "&uid=" ++ (show uid) ++
+      "\n\nIf you didn't register for Snys, click the link below to remove yourself\
+      \ from our records:\n\n\t"
+      ++ serverAddress ++ "/unverify?email=" ++ email ++ "&uid=" ++ (show uid)
+
+sendPendingVerifications :: Connection -> IO ()
+sendPendingVerifications db = 
+   do users <- Db.getPendingUsers db
+      --Downgrade pending to unverified:
+      Db.downgradePending db
+      mapM_ sendConfirmation users
+   where sendConfirmation (Db.User uid email _ _) =
+            sendMail
+               email
+               ("Please verify your email")
+               (verificationText uid email)
