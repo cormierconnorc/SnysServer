@@ -26,7 +26,7 @@ CREATE TABLE `Groups` (
   `Gid` int(11) NOT NULL AUTO_INCREMENT,
   `Groupname` varchar(255) NOT NULL,
   PRIMARY KEY (`Gid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -36,6 +36,33 @@ CREATE TABLE `Groups` (
 LOCK TABLES `Groups` WRITE;
 /*!40000 ALTER TABLE `Groups` DISABLE KEYS */;
 /*!40000 ALTER TABLE `Groups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `Invitations`
+--
+
+DROP TABLE IF EXISTS `Invitations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `Invitations` (
+  `Uid` int(11) NOT NULL,
+  `Gid` int(11) NOT NULL,
+  `Permissions` varchar(11) NOT NULL,
+  PRIMARY KEY (`Uid`,`Gid`),
+  KEY `Gid` (`Gid`),
+  CONSTRAINT `Invitations_ibfk_1` FOREIGN KEY (`Uid`) REFERENCES `Users` (`Uid`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `Invitations_ibfk_2` FOREIGN KEY (`Gid`) REFERENCES `Groups` (`Gid`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `Invitations`
+--
+
+LOCK TABLES `Invitations` WRITE;
+/*!40000 ALTER TABLE `Invitations` DISABLE KEYS */;
+/*!40000 ALTER TABLE `Invitations` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -49,6 +76,7 @@ CREATE TABLE `Membership` (
   `Uid` int(11) NOT NULL,
   `Gid` int(11) NOT NULL,
   `Permissions` varchar(11) NOT NULL,
+  PRIMARY KEY (`Uid`,`Gid`),
   KEY `Uid` (`Uid`),
   KEY `Gid` (`Gid`),
   CONSTRAINT `Membership_ibfk_1` FOREIGN KEY (`Uid`) REFERENCES `Users` (`Uid`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -104,6 +132,7 @@ CREATE TABLE `UserNoteStatus` (
   `Nid` int(11) NOT NULL,
   `Status` varchar(10) NOT NULL,
   `RemindAt` datetime DEFAULT NULL,
+  PRIMARY KEY (`Uid`,`Nid`),
   KEY `Uid` (`Uid`),
   KEY `Nid` (`Nid`),
   CONSTRAINT `UserNoteStatus_ibfk_1` FOREIGN KEY (`Uid`) REFERENCES `Users` (`Uid`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -134,7 +163,7 @@ CREATE TABLE `Users` (
   `Status` varchar(20) NOT NULL,
   PRIMARY KEY (`Uid`),
   UNIQUE KEY `Email` (`Email`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -155,4 +184,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2014-07-17 15:28:22
+-- Dump completed on 2014-07-18 13:15:14

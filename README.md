@@ -6,7 +6,8 @@ The server-side component of the Snys app, written in Haskell. Still in developm
 
 Depends on hdbc-odbc, smtps-gmail, happstack-server, and aeson packages from Hackage.
 Create a `credentials.txt` file similar to the example provided to take advantage of the Snys server's email functionality.
-Also, edit the server address at the top of SnysServer.hs to set the address linked to in verification emails. This solution is only temporary, but it is necessary in this version
+Also, edit the server address at the top of SnysServer.hs to set the address linked to in verification emails. This solution is only temporary, but it is necessary in this version.
+Uses a MySQL database accessed via ODBC. To connect, the DatabaseClient looks for a data source called "Snys".
 
 ##Snys API Documentation
 
@@ -41,11 +42,39 @@ Confirm incorrect email address. Removes user from database.
 | email     | Email address to unverify |
 | uid       | Uid of account to unverify |
 
+
+######/acceptInviteEmail
+
+Accept an invite to a group as an email-only user. Also verifies email.
+
+| Parameter | Description |
+| --------- | ----------- |
+| uid       | User id     |
+| gid       | Group id    |
+
+######/denyInviteEmail
+
+Deny an invite to a group as an email-only user. Also unverifies email.
+
+| Parameter | Description |
+| --------- | ----------- |
+| uid       | User id     |
+| gid       | Group id    |
+
+######/leaveGroupEmail
+
+Leave a group via email link. Only accessible to email-only users.
+
+| Parameter | Description |
+| --------- | ----------- |
+| uid       | User id     |
+| gid       | gid of group to leave |
+
 ####User-verified endpoints
 
 ######/info
 
-Retrieve all information relevant to the user: group memberships, handled notifications, and pending notifications.
+Retrieve all information relevant to the user: group memberships, invites, handled notifications, and pending notifications.
 
 | Parameter | Description |
 | --------- | ----------- |
@@ -69,6 +98,17 @@ Retrieve the list of groups that the user is part of.
 | --------- | ----------- |
 | email     | Account email |
 | pass      | Account password |
+
+
+######/invitations
+
+Retrieve the list of groups the user has been invited to.
+
+| Parameter | Description |
+| --------- | ----------- |
+| email     | Account email |
+| pass      | Account password |
+
 
 ######/createGroup
 
@@ -110,13 +150,35 @@ Change the status of a note. The affected note can be pending or already handled
 | pass      | Account password |
 | nid       | ID of note to change |
 | newStatus | The reminder status of the note. This should be one of `All`, `JustEmail`, `Hide`, `Alarm`, and `NoRemind`. An invalid value will cause this request to fail.
-| remindAt  | The Unix timestamp (in seconds) of the time at which to remind the user. If `newStatus` is `All`, `JustEmail`, or `Alarm`, this value must be set. Otherwise, it is optional and will be ignored by the server.
+| remindAt  | The Unix timestamp (in seconds) of the time at which to remind the user. If `newStatus` is `All`, `JustEmail`, or `Alarm`, this value must be set. Otherwise, it is optional and will be ignored by the server. |
+
+######/acceptInvite
+
+Accept an invite to a group
+
+| Parameter | Description |
+| --------- | ----------- |
+| email     | Account email |
+| pass      | Account password |
+| gid       | Group you were invited to |
+
+
+######/denyInvite
+
+Deny an invitation to a group
+
+| Parameter | Description |
+| --------- | ----------- |
+| email     | Account email |
+| pass      | Account password |
+| gid       | Group you were invited to |
+
 
 ####Group-verified endpoints
 
 ######/inviteUser
 
-TODO: Invite a user to the provided group. This can be done by anyone with `Member` (read only) permissions or higher.
+Invite a user to the provided group. This can be done by anyone with `Member` (read only) permissions or higher.
 
 | Parameter | Description |
 | --------- | ----------- |
@@ -124,6 +186,7 @@ TODO: Invite a user to the provided group. This can be done by anyone with `Memb
 | pass      | Account password |
 | gid       | The id of the relevant group |
 | invite    | The email address of the person to invite to the group. If they are a Snys user, they will receive an in-app notification. Otherwise, they will be sent an email notifying them (and giving them a chance to opt out) |
+| permissions | The permission level to grant the new user. Must be less than or equal to the current user's group permission level | 
 
 
 ######/leaveGroup

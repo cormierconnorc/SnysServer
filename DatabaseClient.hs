@@ -11,8 +11,8 @@ import Control.Monad (when)
 
 --Enumerated data types in db
 --Note: Pending status is for users who register via the api. PendingViaInvite is used for individuals without Snys accounts who are invited to a group. They are can only receive notifications from groups they're invited to until (if) they create an account via the Snys api. Attempting to register via the api with the email account of an EmailOnly user will result in an upgrade to verified status for that user.
-data UserStatus = Verified | Unverified | EmailOnly | UnverifiedEmailOnly | Pending | PendingViaInvite | DNE deriving (Show, Read, Eq)
-data MembershipPermission = Owner | Contributor | Member | None deriving (Show, Read, Eq)
+data UserStatus = Verified | Unverified | EmailOnly | UnverifiedEmailOnly | Pending | DNE deriving (Show, Read, Eq)
+data MembershipPermission = None | Member | Contributor | Admin deriving (Show, Read, Eq, Ord)
 data UserNoteStatus = All | JustEmail | Hide | Alarm | NoRemind deriving (Show, Read, Eq)
 
 type Id = Int
@@ -26,6 +26,9 @@ data Group = Group { gid :: Id,
                      groupname :: Groupname
                    } deriving (Show, Read, Eq)
 data Membership = Membership { group :: Group,
+                               permissions :: MembershipPermission
+                             } |
+                  Invitation { group :: Group,
                                permissions :: MembershipPermission
                              } deriving (Show, Read, Eq)
 data User = User { uid :: Id,
@@ -41,7 +44,10 @@ data Notification = Notification
                        } |
                     EmailNotification
                        { sendTo :: Email,
+                         associatedUid :: Id,
+                         associatedStatus :: UserStatus,
                          fromGroup :: Groupname,
+                         associatedGid :: Id,
                          text :: String,
                          time :: Timestamp
                        } |
@@ -50,7 +56,14 @@ data Notification = Notification
                          status :: UserNoteStatus,
                          remindAt :: Maybe Timestamp
                        }
-     deriving (Show, Read, Eq) 
+     deriving (Show, Read, Eq)
+
+data EmailInvitation  = EmailInvitation { eUid :: Id,
+                                          eEmail :: Email,
+                                          eGid :: Id,
+                                          eGroupname :: Groupname,
+                                          ePerm :: MembershipPermission
+                                        } deriving (Show, Read, Eq)
 
 databaseConnectionString :: String
 databaseConnectionString = "DSN=Snys;"
@@ -104,17 +117,18 @@ insertGroup db name =
       commit db
       retrieveId db
 
-insertMembershipQuery = "INSERT INTO Membership(Uid, Gid, Permissions) VALUES (?, ?, ?)"
+insertMembershipQuery = "INSERT INTO Membership(Uid, Gid, Permissions) VALUES (?, ?, ?) \
+                           \ON DUPLICATE KEY UPDATE Permissions = ?"
 
 insertMembership :: Connection -> Id -> Id -> MembershipPermission -> IO ()
 insertMembership db uid gid perm = 
-   do run db insertMembershipQuery [toSql uid, toSql gid, toSql $ show perm]
+   do run db insertMembershipQuery [toSql uid, toSql gid, toSql $ show perm, toSql $ show perm]
       commit db
                  
 createGroup :: Connection -> Id -> Groupname -> IO Int
 createGroup db uid name = 
    do gid <- insertGroup db name
-      insertMembership db uid gid Owner
+      insertMembership db uid gid Admin
       return gid
 
 insertNotificationQuery = "INSERT INTO Notifications(Gid, Text, Time) VALUES (?, ?, FROM_UNIXTIME(?))"
@@ -125,18 +139,40 @@ insertNotification db gid text time =
       commit db
       retrieveId db
 
-deleteUserNoteStatusQuery = "DELETE FROM UserNoteStatus WHERE Uid=? AND Nid=?"
-insertUserNoteStatusQuery = "INSERT INTO UserNoteStatus(Uid, Nid, Status, RemindAt) VALUES (?, ?, ?, FROM_UNIXTIME(?))"
+insertUserNoteStatusQuery = "INSERT INTO UserNoteStatus(Uid, Nid, Status, RemindAt) \
+                               \VALUES (?, ?, ?, FROM_UNIXTIME(?)) \
+                               \ON DUPLICATE KEY UPDATE Status = ?, RemindAt = FROM_UNIXTIME(?)"
 
 insertUserNoteStatus :: Connection -> Id -> Id -> UserNoteStatus -> Maybe Timestamp -> IO ()
 insertUserNoteStatus db uid nid stat remind = 
-   do run db deleteUserNoteStatusQuery [toSql uid,  --Delete the old value to prevent duplicates
-                                        toSql nid]
-      run db insertUserNoteStatusQuery [toSql uid,
+   do run db insertUserNoteStatusQuery [toSql uid,
                                         toSql nid,
+                                        toSql $ show stat,
+                                        toSql remind,
                                         toSql $ show stat,
                                         toSql remind]
       commit db
+
+insertInvitationQuery = "INSERT INTO Invitations VALUES (?, ?, ?) \
+                           \ON DUPLICATE KEY UPDATE Permissions = ?"
+
+insertInvitation :: Connection -> Id -> Id -> MembershipPermission -> IO ()
+insertInvitation db uid gid perm =
+   do run db insertInvitationQuery [toSql uid, toSql gid, toSql $ show perm, toSql $ show perm]
+      commit db
+
+acceptInvitationQuery = "INSERT INTO Membership SELECT Uid, Gid, Permissions \
+                           \FROM Invitations I WHERE I.Uid = ? AND I.Gid = ? \
+                           \ON DUPLICATE KEY UPDATE Permissions = I.Permissions;"
+
+acceptInvitation :: Connection -> Id -> Id -> IO Integer
+acceptInvitation db uid gid =
+   do --Add invitation
+      res <- run db acceptInvitationQuery [toSql uid, toSql gid]
+      --Now remove from db. See below for delete query
+      run db denyInvitationQuery [toSql uid, toSql gid]
+      commit db
+      return res
 
 
 -------------------------------
@@ -196,6 +232,34 @@ unverifyUser db uid email =
       commit db
       return res
 
+--The "unsafe unverify." This should never be linked directly from an email
+unverifyUserUidQuery = "DELETE FROM Users WHERE Uid = ? \
+                          \AND Status IN (\"UnverifiedEmailOnly\")"
+
+unverifyUserUid :: Connection -> Id -> IO Integer
+unverifyUserUid db uid = 
+   do res <- run db unverifyUserUidQuery [toSql uid]
+      commit db
+      return res
+
+denyInvitationQuery = "DELETE FROM Invitations WHERE Uid = ? AND Gid = ?"
+
+denyInvitation :: Connection -> Id -> Id -> IO Integer
+denyInvitation db uid gid = 
+   do res <- run db denyInvitationQuery [toSql uid, toSql gid]
+      commit db
+      return res
+
+removeEmptyEmailersQuery = "DELETE FROM Users WHERE \
+                              \Status IN (\"EmailOnly\", \"UnverifiedEmailOnly\") AND \
+                              \Uid NOT IN (SELECT Uid FROM Membership) AND \
+                              \Uid NOT IN (SELECT Uid FROM Invitations)"
+
+removeEmptyEmailers :: Connection -> IO ()
+removeEmptyEmailers db =
+   do run db removeEmptyEmailersQuery []
+      commit db
+
 -------------------------------
 -- Access Queries            --
 -------------------------------
@@ -225,6 +289,16 @@ getUser db uid =
       if null user
          then return Nothing
          else return $ Just (head user)
+
+getUserEmailQuery = "SELECT * FROM Users WHERE Email = ?"
+
+getUserEmail :: Connection -> Email -> IO (Maybe User)
+getUserEmail db email =
+   do res <- quickQuery' db getUserEmailQuery [toSql email]
+      let user = map toUser res
+      if null user
+         then return Nothing
+         else return $ Just (head user)
       
 
 getUserStatusQuery = "SELECT Status FROM Users WHERE Uid = ?"
@@ -244,8 +318,10 @@ getGroups :: Connection -> Id -> IO [Membership]
 getGroups db uid =
    do res <- quickQuery' db getGroupsQuery [toSql uid]
       return $ map toMembership res
-   where toMembership [gid, groupname, perm] = 
-            Membership (Group (fromSql gid) (fromSql groupname)) (read . fromSql $ perm)
+
+toMembership :: [SqlValue] -> Membership
+toMembership [gid, groupname, perm] = 
+   Membership (Group (fromSql gid) (fromSql groupname)) (read . fromSql $ perm)
 
 getGroupPermissionQuery = "SELECT Permissions FROM Membership WHERE Uid = ? AND Gid = ?"
 
@@ -256,8 +332,8 @@ getGroupPermission db uid gid =
       return $ case perm of Nothing -> None
                             Just x -> read $ fromSql x
 
-getPendingEmailsQuery = "SELECT Users.Email, Groups.Groupname, Notifications.Text, \
-                           \UNIX_TIMESTAMP(Notifications.Time) FROM \
+getPendingEmailsQuery = "SELECT Users.Email, Users.Uid, Users.Status, Groups.Groupname, Groups.Gid, \
+                           \Notifications.Text, UNIX_TIMESTAMP(Notifications.Time) FROM \
                            \UserNoteStatus INNER JOIN Users ON Users.Uid = UserNoteStatus.Uid \
                            \INNER JOIN Notifications on UserNoteStatus.Nid = Notifications.Nid \
                            \INNER JOIN Groups on Notifications.Gid = Groups.Gid \
@@ -270,7 +346,7 @@ getPendingEmails :: Connection -> Timestamp -> IO [Notification]
 getPendingEmails db time =
    do res <- quickQuery' db getPendingEmailsQuery [toSql time]
       return $ map toEmailNotification res
-   where toEmailNotification [e, g, t, tS] = EmailNotification (fromSql e) (fromSql g) (fromSql t) (fromSql tS)
+   where toEmailNotification [e, uid, uStat, g, gid, t, tS] = EmailNotification (fromSql e) (fromSql uid) (read $ fromSql uStat) (fromSql g) (fromSql gid) (fromSql t) (fromSql tS)
 
 
 getPendingNotificationsQuery = "SELECT Notifications.Nid, Notifications.Gid, \
@@ -347,6 +423,36 @@ getPendingUsers :: Connection -> IO [User]
 getPendingUsers db =
    map toUser `fmap` quickQuery' db getPendingUsersQuery []
 
+getInvitationsQuery = "SELECT G.Gid, G.Groupname, I.Permissions FROM \
+                         \Invitations I INNER JOIN Groups G ON I.Gid = G.Gid WHERE I.Uid = ?"
+
+getInvitations :: Connection -> Id -> IO [Membership]
+getInvitations db uid =
+   map toInvitation `fmap` quickQuery' db getInvitationsQuery [toSql uid]
+   where toInvitation [u, g, p] = Invitation (Group (fromSql u) (fromSql g)) (read $ fromSql p)
+
+getGroupQuery = "SELECT M.Gid, Groups.Groupname, M.Permissions FROM \
+                    \(SELECT * FROM Membership WHERE Uid = ? AND Gid = ?) M INNER JOIN \
+                    \Groups on M.Gid = Groups.Gid"
+
+getGroup :: Connection -> Id -> Id -> IO [Membership]
+getGroup db uid gid =
+   map toMembership `fmap` quickQuery' db getGroupQuery [toSql uid, toSql gid]
+
+getEmailOnlyInvitationsQuery = "SELECT I.Uid, U.Email, I.Gid, G.Groupname, I.Permissions FROM \
+                                  \Invitations I INNER JOIN Users U ON I.Uid = U.Uid \
+                                  \INNER JOIN Groups G ON I.Gid = G.Gid WHERE \
+                                  \U.Status IN (\"EmailOnly\", \"UnverifiedEmailOnly\") \
+                                  \ORDER BY I.Uid"
+
+--Returns email invitations, sorted by uid
+getEmailOnlyInvitations :: Connection -> IO [EmailInvitation]
+getEmailOnlyInvitations db = 
+   map toEmailInvitation `fmap` quickQuery' db getEmailOnlyInvitationsQuery []
+   where toEmailInvitation [uid, email, gid, groupname, perm] =
+            EmailInvitation (fromSql uid) (fromSql email) (fromSql gid) (fromSql groupname)
+               (read $ fromSql perm)
+
 -------------------------------
 -- Update Queries            --
 -------------------------------
@@ -387,6 +493,15 @@ verifyUser db uid email =
       commit db
       return res
 
+verifyUserUidQuery = "UPDATE Users SET Status = \"EmailOnly\" \
+                     \WHERE Uid = ? \
+                     \AND Status IN (\"UnverifiedEmailOnly\")"
+
+verifyUserUid :: Connection -> Id -> IO Integer
+verifyUserUid db uid =
+   do res <- run db verifyUserUidQuery [toSql uid]
+      commit db
+      return res
 
 --Note: Whenever email changes, verification becomes pending. Also, uses sqlCatchRun since updates may fail (if user attempts to switch to duplicate email)
 updateUser :: Connection -> Id -> Maybe Email -> Maybe Password -> IO (Either String Integer)
