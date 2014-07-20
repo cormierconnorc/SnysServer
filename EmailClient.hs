@@ -9,6 +9,7 @@ import Network.Mail.Client.Gmail
 import qualified Data.Text.Lazy as L
 import qualified Data.Text as S
 import Control.Applicative
+import Control.Concurrent
 
 credentialsFile = "credentials.txt"
 
@@ -30,3 +31,7 @@ sendMail to subject body =
         (S.pack subject)
         (L.pack body)
         []
+
+--Send mail in a new thread
+fSendMail :: String -> String -> String -> IO ThreadId
+fSendMail to subject body = forkIO $ sendMail to subject body

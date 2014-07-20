@@ -59,6 +59,7 @@ handler :: Connection -> ServerPart Response
 handler db =
    do decodeBody bPolicy --Decode post body
       msum [ dir "register" $ register db,
+             dir "checkValid" $ checkValid db,
              dir "verify" $ verify db,
              dir "unverify" $ unverify db,
              dir "acceptInviteEmail" $ acceptInviteEmail db,
@@ -126,6 +127,16 @@ register db =
                 GenericResponse "Duplicate email! Have you forgotten your password?" ""
            | otherwise = GenericResponse x ""
          getRegisterResponse (Right _) = GenericResponse "" "Everything worked!"
+
+
+checkValid :: Connection -> ServerPart Response
+checkValid db =
+   do email <- look "email"
+      pass <- look "pass"
+      mId <- liftIO $ Db.validateUser db email pass
+      if isJust mId
+         then respondJson $ GenericResponse "" "User is valid"
+         else respondJson $ GenericResponse "User is invalid" ""
 
 
 verify :: Connection -> ServerPart Response
@@ -409,7 +420,7 @@ sendPendingEmailOnlyInvites db =
             let title = "Pending invitations on Snys"
                 to = Db.eEmail . head $ group
                 body = foldr (\x acc -> (showLinks x) ++ acc) [] group
-            in sendMail to title body
+            in fSendMail to title body
          showLinks (Db.EmailInvitation eUid _ eGid eName _) =
             let params = "?uid=" ++ (show eUid) ++ "&gid=" ++ (show eGid)
                 acceptText = "Invited to " ++ eName ++ "!\n\tTo accept: "
@@ -434,7 +445,7 @@ sendPendingVerifications db =
       Db.downgradePending db
       mapM_ sendConfirmation users
    where sendConfirmation (Db.User uid email _ _) =
-            sendMail
+            fSendMail
                email
                ("Please verify your email")
                (verificationText uid email)
@@ -444,7 +455,7 @@ sendPendingEmails db time =
    do notes <- Db.getPendingEmails db time
       mapM_ send notes
    where send (Db.EmailNotification to uid uStatus from gid text time) =
-            sendMail
+            fSendMail
                to
                ("Reminder from " ++ from)
                (text ++ "\n\nEvent in question occurs at " ++ (formatTime time) ++

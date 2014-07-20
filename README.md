@@ -24,6 +24,16 @@ Register a new account with given email and password. A confirmation email will 
 | email     | Email address to register. Must not be associated with an existing account. |
 | pass      | New account's password |
 
+
+######/checkValid
+
+Verify that an account with given email and password exists. Returns generic response without errs if it does, with errors if it does not.
+
+| Parameter | Description |
+| --------- | ----------- |
+| email     | Email       |
+| pass      | Password    |
+
 ######/verify
 
 Verify a given email address.
