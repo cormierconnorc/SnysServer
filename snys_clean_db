@@ -26,7 +26,7 @@ CREATE TABLE `Groups` (
   `Gid` int(11) NOT NULL AUTO_INCREMENT,
   `Groupname` varchar(255) NOT NULL,
   PRIMARY KEY (`Gid`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -104,11 +104,11 @@ CREATE TABLE `Notifications` (
   `Nid` int(11) NOT NULL AUTO_INCREMENT,
   `Gid` int(11) NOT NULL,
   `Text` text NOT NULL,
-  `Time` datetime DEFAULT NULL,
+  `Time` datetime NOT NULL,
   PRIMARY KEY (`Nid`),
   KEY `Gid` (`Gid`),
   CONSTRAINT `Notifications_ibfk_1` FOREIGN KEY (`Gid`) REFERENCES `Groups` (`Gid`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -163,7 +163,7 @@ CREATE TABLE `Users` (
   `Status` varchar(20) NOT NULL,
   PRIMARY KEY (`Uid`),
   UNIQUE KEY `Email` (`Email`)
-) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -184,4 +184,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2014-07-18 13:15:14
+-- Dump completed on 2014-07-21 20:49:46
