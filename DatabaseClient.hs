@@ -1,5 +1,7 @@
 --Connor Cormier, 7/12/14
 
+{-# LANGUAGE DeriveGeneric #-}
+
 --TODO: Only export what's needed
 module DatabaseClient where
 
@@ -8,12 +10,13 @@ import Database.HDBC.ODBC
 import Control.Exception
 import Data.List (splitAt)
 import Control.Monad (when)
+import GHC.Generics
 
 --Enumerated data types in db
 --Note: Pending status is for users who register via the api. PendingViaInvite is used for individuals without Snys accounts who are invited to a group. They are can only receive notifications from groups they're invited to until (if) they create an account via the Snys api. Attempting to register via the api with the email account of an EmailOnly user will result in an upgrade to verified status for that user.
-data UserStatus = Verified | Unverified | EmailOnly | UnverifiedEmailOnly | Pending | DNE deriving (Show, Read, Eq)
-data MembershipPermission = None | Member | Contributor | Admin deriving (Show, Read, Eq, Ord)
-data UserNoteStatus = All | JustEmail | Hide | Alarm | NoRemind deriving (Show, Read, Eq)
+data UserStatus = Verified | Unverified | EmailOnly | UnverifiedEmailOnly | Pending | DNE deriving (Show, Read, Eq, Generic)
+data MembershipPermission = None | Member | Contributor | Admin deriving (Show, Read, Eq, Ord, Generic)
+data UserNoteStatus = All | JustEmail | Hide | Alarm | NoRemind deriving (Show, Read, Eq, Generic)
 
 type Id = Int
 type Timestamp = Int
@@ -24,18 +27,18 @@ type Groupname = String
 --Access data types
 data Group = Group { gid :: Id,
                      groupname :: Groupname
-                   } deriving (Show, Read, Eq)
+                   } deriving (Show, Read, Eq, Generic)
 data Membership = Membership { group :: Group,
                                permissions :: MembershipPermission
                              } |
                   Invitation { group :: Group,
                                permissions :: MembershipPermission
-                             } deriving (Show, Read, Eq)
+                             } deriving (Show, Read, Eq, Generic)
 data User = User { uid :: Id,
                    email :: Email,
                    password :: Password,
                    userStatus :: UserStatus
-                 } deriving (Show, Read, Eq)
+                 } deriving (Show, Read, Eq, Generic)
 data Notification = Notification
                        { nid :: Id,
                          associatedGid :: Id,
@@ -56,14 +59,14 @@ data Notification = Notification
                          status :: UserNoteStatus,
                          remindAt :: Maybe Timestamp
                        }
-     deriving (Show, Read, Eq)
+     deriving (Show, Read, Eq, Generic)
 
 data EmailInvitation  = EmailInvitation { eUid :: Id,
                                           eEmail :: Email,
                                           eGid :: Id,
                                           eGroupname :: Groupname,
                                           ePerm :: MembershipPermission
-                                        } deriving (Show, Read, Eq)
+                                        } deriving (Show, Read, Eq, Generic)
 
 databaseConnectionString :: String
 databaseConnectionString = "DSN=Snys;"

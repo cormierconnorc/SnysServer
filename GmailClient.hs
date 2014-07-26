@@ -20,8 +20,8 @@ readCredentials =
       return (email, pass)
    where validLine = (&&) <$> ((> 0) . length) <*> ((/= '#') . head)
 
-sendMail :: String -> String -> String -> IO ()
-sendMail to subject body =
+sendEmail :: String -> String -> String -> IO ()
+sendEmail to subject body =
    do (gmailUser, gmailPass) <- readCredentials
       sendGmail
         (L.pack gmailUser)
@@ -33,5 +33,5 @@ sendMail to subject body =
         []
 
 --Send mail in a new thread
-fSendMail :: String -> String -> String -> IO ThreadId
-fSendMail to subject body = forkIO $ sendMail to subject body
+fSendEmail :: String -> String -> String -> IO ThreadId
+fSendEmail to subject body = forkIO $ sendMail to subject body

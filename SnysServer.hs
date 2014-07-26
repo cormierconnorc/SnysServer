@@ -1,11 +1,13 @@
 --Connor Cormier, 7/14/14
 
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
+-- {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 import Happstack.Server
 import qualified DatabaseClient as Db
-import EmailClient
+--import GmailClient  --Do not use gmail by default
+import LocalSmtpClient
 import Control.Concurrent
 import qualified Data.ByteString.Lazy.Char8 as B
 import Control.Monad
@@ -14,31 +16,38 @@ import Database.HDBC.ODBC
 import Data.List (isInfixOf, groupBy)
 import Data.Aeson.Encode
 import Data.Aeson.Types
-import Data.Aeson.TH
+--import Data.Aeson.TH
 import qualified Data.Vector as V
 import Data.Maybe (isJust, isNothing)
 import Control.Applicative (optional)
 import Data.Time.Clock.POSIX
 import Data.Function (on)
+import GHC.Generics
 
 data GenericResponse = GenericResponse { error :: String,
                                          response :: String
-                                       } deriving (Show, Eq)
+                                       } deriving (Show, Eq, Generic)
 
---Create a default ToJSON instance for GenericResponse
-$(deriveToJSON defaultOptions ''GenericResponse) 
---JSON instances for Database types
-$(deriveToJSON defaultOptions ''Db.UserStatus)
-$(deriveToJSON defaultOptions ''Db.MembershipPermission)
-$(deriveToJSON defaultOptions ''Db.UserNoteStatus)
-$(deriveToJSON defaultOptions ''Db.Group)
-$(deriveToJSON defaultOptions ''Db.Membership)
-$(deriveToJSON defaultOptions ''Db.User)
-$(deriveToJSON defaultOptions ''Db.Notification)
+-- --Create a default ToJSON instance for GenericResponse
+-- $(deriveToJSON defaultOptions ''GenericResponse) 
+-- --JSON instances for Database types
+-- $(deriveToJSON defaultOptions ''Db.UserStatus)
+-- $(deriveToJSON defaultOptions ''Db.MembershipPermission)
+-- $(deriveToJSON defaultOptions ''Db.UserNoteStatus)
+-- $(deriveToJSON defaultOptions ''Db.Group)
+-- $(deriveToJSON defaultOptions ''Db.Membership)
+-- $(deriveToJSON defaultOptions ''Db.User)
+-- $(deriveToJSON defaultOptions ''Db.Notification)
 
---Add this type of shit if compiling with a stage 1 compiler (no TemplateHaskell)
---instance T.ToJSON GenericResponse where
---   toJSON (GenericResponse e d) = T.object ["errors" .= e, "data" .= d]
+--No template haskell? Use generics to derive JSON instances:
+instance ToJSON GenericResponse
+instance ToJSON Db.UserStatus
+instance ToJSON Db.MembershipPermission
+instance ToJSON Db.UserNoteStatus
+instance ToJSON Db.Group
+instance ToJSON Db.Membership
+instance ToJSON Db.User
+instance ToJSON Db.Notification
 
 --The address of the server. Necessary for email verification!
 serverAddress = "http://localhost:8005"
@@ -420,7 +429,7 @@ sendPendingEmailOnlyInvites db =
             let title = "Pending invitations on Snys"
                 to = Db.eEmail . head $ group
                 body = foldr (\x acc -> (showLinks x) ++ acc) [] group
-            in fSendMail to title body
+            in fSendEmail to title body
          showLinks (Db.EmailInvitation eUid _ eGid eName _) =
             let params = "?uid=" ++ (show eUid) ++ "&gid=" ++ (show eGid)
                 acceptText = "Invited to " ++ eName ++ "!\n\tTo accept: "
@@ -445,7 +454,7 @@ sendPendingVerifications db =
       Db.downgradePending db
       mapM_ sendConfirmation users
    where sendConfirmation (Db.User uid email _ _) =
-            fSendMail
+            fSendEmail
                email
                ("Please verify your email")
                (verificationText uid email)
@@ -455,7 +464,7 @@ sendPendingEmails db time =
    do notes <- Db.getPendingEmails db time
       mapM_ send notes
    where send (Db.EmailNotification to uid uStatus from gid text time) =
-            fSendMail
+            fSendEmail
                to
                ("Reminder from " ++ from)
                (text ++ "\n\nEvent in question occurs at " ++ (formatTime time) ++
