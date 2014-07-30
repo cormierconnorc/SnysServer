@@ -4,10 +4,10 @@ The server-side component of the Snys app, written in Haskell. Still in developm
 
 ##Setting up Snys
 
-Depends on hdbc-odbc, smtps-gmail, happstack-server, and aeson packages from Hackage.
-Create a `credentials.txt` file similar to the example provided to take advantage of the Snys server's email functionality.
-Also, edit the server address at the top of SnysServer.hs to set the address linked to in verification emails. This solution is only temporary, but it is necessary in this version.
+Depends on hdbc-odbc, smtps-gmail, happstack-server, happstack-server-tls, and aeson packages from Hackage.
 Uses a MySQL database accessed via ODBC. To connect, the DatabaseClient looks for a data source called "Snys".
+You'll need to set up an smtp mail server listening on port 25 for the server's email functionality to work.
+Also, be sure to create an ssl certificate and private key (named ssl.crt and ssl.key, respectively) and place them in the ssl/ directory.
 
 ##Snys API Documentation
 
