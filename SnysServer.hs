@@ -1,7 +1,6 @@
 --Connor Cormier, 7/14/14
 
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 import Happstack.Server
