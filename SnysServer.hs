@@ -52,11 +52,11 @@ main =
       --Create a thread to manage the database
       forkIO $ handleDb db
       --Server configuration: HTTP
-      --let conf = nullConf { port = 8005 }
+      let conf = nullConf { port = 8005 }
       --Server configuration: HTTPS
-      let tlsConf = nullTLSConf {tlsPort = 8005, tlsCert = "./ssl/ssl.crt", tlsKey = "./ssl/ssl.key"}
-      --Now start the actual server
-      --simpleHTTP conf $ handler db
+      let tlsConf = nullTLSConf {tlsPort = 8006, tlsCert = "./ssl/ssl.crt", tlsKey = "./ssl/ssl.key"}
+      --Now start the actual server: both http and https listeners
+      forkIO $ simpleHTTP conf $ handler db
       simpleHTTPS tlsConf $ handler db
 
 bPolicy :: BodyPolicy
