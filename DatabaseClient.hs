@@ -88,11 +88,12 @@ retrieveId db =
 --Error handling function
 sqlCatchRun :: Connection -> IO Integer -> IO (Either String Integer)
 sqlCatchRun db runAction =
-   do catch (do res <- runAction
-                commit db
-                return $ Right res
-            )
-            (\(SqlError _ _ msg) -> return $ Left msg)
+   --Full name is needed for compilation on rpi
+   do Control.Exception.catch (do res <- runAction
+                                  commit db
+                                  return $ Right res
+                              )
+                              (\(SqlError _ _ msg) -> return $ Left msg)
             
 
 -------------------------------

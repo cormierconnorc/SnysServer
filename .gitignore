@@ -7,5 +7,7 @@ SnysServer
 *.hi
 .my.cnf*
 .mysql*
+#Ignore ssl certificate directory contents
+ssl/*
 #Ignore credentials file as well for security reasons. The sample will be uploaded
 credentials.txt

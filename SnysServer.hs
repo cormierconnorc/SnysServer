@@ -1,12 +1,12 @@
 --Connor Cormier, 7/14/14
 
 {-# LANGUAGE OverloadedStrings #-}
--- {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 import Happstack.Server
+import Happstack.Server.SimpleHTTPS
 import qualified DatabaseClient as Db
---import GmailClient  --Do not use gmail by default
 import LocalSmtpClient
 import Control.Concurrent
 import qualified Data.ByteString.Lazy.Char8 as B
@@ -16,7 +16,6 @@ import Database.HDBC.ODBC
 import Data.List (isInfixOf, groupBy)
 import Data.Aeson.Encode
 import Data.Aeson.Types
---import Data.Aeson.TH
 import qualified Data.Vector as V
 import Data.Maybe (isJust, isNothing)
 import Control.Applicative (optional)
@@ -28,38 +27,38 @@ data GenericResponse = GenericResponse { error :: String,
                                          response :: String
                                        } deriving (Show, Eq, Generic)
 
--- --Create a default ToJSON instance for GenericResponse
--- $(deriveToJSON defaultOptions ''GenericResponse) 
--- --JSON instances for Database types
--- $(deriveToJSON defaultOptions ''Db.UserStatus)
--- $(deriveToJSON defaultOptions ''Db.MembershipPermission)
--- $(deriveToJSON defaultOptions ''Db.UserNoteStatus)
--- $(deriveToJSON defaultOptions ''Db.Group)
--- $(deriveToJSON defaultOptions ''Db.Membership)
--- $(deriveToJSON defaultOptions ''Db.User)
--- $(deriveToJSON defaultOptions ''Db.Notification)
-
---No template haskell? Use generics to derive JSON instances:
+--Use generics to derive JSON instances (template haskell not available on rpi):
 instance ToJSON GenericResponse
+   where toJSON = genericToJSON defaultOptions
 instance ToJSON Db.UserStatus
+   where toJSON = genericToJSON defaultOptions
 instance ToJSON Db.MembershipPermission
+   where toJSON = genericToJSON defaultOptions
 instance ToJSON Db.UserNoteStatus
+   where toJSON = genericToJSON defaultOptions
 instance ToJSON Db.Group
+   where toJSON = genericToJSON defaultOptions
 instance ToJSON Db.Membership
+   where toJSON = genericToJSON defaultOptions
 instance ToJSON Db.User
+   where toJSON = genericToJSON defaultOptions
 instance ToJSON Db.Notification
+   where toJSON = genericToJSON defaultOptions
 
 --The address of the server. Necessary for email verification!
-serverAddress = "http://localhost:8005"
+serverAddress = "http://raspbi.mooo.com/snys"
 
 main =
    do db <- Db.connectDb
       --Create a thread to manage the database
       forkIO $ handleDb db
-      --Server configuration
-      let conf = nullConf { port = 8005 }
+      --Server configuration: HTTP
+      --let conf = nullConf { port = 8005 }
+      --Server configuration: HTTPS
+      let tlsConf = nullTLSConf {tlsPort = 8005, tlsCert = "./ssl/ssl.crt", tlsKey = "./ssl/ssl.key"}
       --Now start the actual server
-      simpleHTTP conf $ handler db
+      --simpleHTTP conf $ handler db
+      simpleHTTPS tlsConf $ handler db
 
 bPolicy :: BodyPolicy
 bPolicy = defaultBodyPolicy "/tmp/" 0 1000 1000
